@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BeeGramm 🐝 - Мессенджер с пчелиной тематикой</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐝</text></svg>">
+</head>
+<body>
+    <!-- Экран авторизации -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="auth-container">
+            <div class="auth-header">
+                <h1>🐝 BeeGramm</h1>
+                <p class="tagline">Жужжи вместе с друзьями! 🍯</p>
+            </div>
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">Вход</button>
+                <button class="auth-tab" data-tab="register">Регистрация</button>
+            </div>
+            
+            <!-- Форма входа -->
+            <div id="login-form" class="auth-form active">
+                <div class="form-group">
+                    <label>👤 Имя пользователя</label>
+                    <input type="text" id="login-username" placeholder="username">
+                </div>
+                <div class="form-group">
+                    <label>🔒 Пароль</label>
+                    <input type="password" id="login-password" placeholder="••••••••">
+                </div>
+                <button class="btn-primary" onclick="login()">
+                    Войти в улей 🐝
+                </button>
+                <div id="login-error" class="error-message"></div>
+            </div>
+            
+            <!-- Форма регистрации -->
+            <div id="register-form" class="auth-form">
+                <div class="form-group">
+                    <label>👤 Имя пользователя</label>
+                    <input type="text" id="register-username" placeholder="username">
+                </div>
+                <div class="form-group">
+                    <label>✨ Никнейм</label>
+                    <input type="text" id="register-nickname" placeholder="Весёлая пчёлка">
+                </div>
+                <div class="form-group">
+                    <label>🔒 Пароль</label>
+                    <input type="password" id="register-password" placeholder="••••••••">
+                </div>
+                <button class="btn-primary" onclick="register()">
+                    Создать аккаунт 🍯
+                </button>
+                <div id="register-error" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Главный экран приложения -->
+    <div id="app-screen" class="app-screen" style="display: none;">
+        <!-- Боковая панель -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="user-profile-mini" onclick="openProfile()">
+                    <img id="sidebar-avatar" src="/uploads/avatars/default.png" alt="Avatar" class="avatar-mini">
+                    <div class="user-info-mini">
+                        <div class="user-name-mini" id="sidebar-name">Пользователь</div>
+                        <div class="user-stars" id="sidebar-stars">100 🐝</div>
+                    </div>
+                </div>
+                <div class="sidebar-actions">
+                    <button class="btn-icon btn-premium-activate" onclick="openPremiumModal()" title="BeeGramm Premium" id="premium-btn">
+                        ⭐
+                    </button>
+                    <button class="btn-icon" onclick="toggleTheme()" title="Сменить тему" id="theme-toggle">
+                        🌙
+                    </button>
+                    <button class="btn-icon" onclick="openNewChat()" title="Новый чат">
+                        ➕
+                    </button>
+                    <button class="btn-icon" onclick="window.location.href='/admin'" title="Админ-панель" id="admin-btn" style="display: none;">
+                        👑
+                    </button>
+                </div>
+            </div>
+            
+            <div class="search-bar">
+                <input type="text" id="chat-search" placeholder="🔍 Поиск чатов...">
+            </div>
+            
+            <div class="chats-list" id="chats-list">
+                <!-- Список чатов будет здесь -->
+            </div>
+        </div>
+        
+        <!-- Область чата -->
+        <div class="chat-area">
+            <div id="no-chat-selected" class="no-chat-selected">
+                <div class="bee-animation">🐝</div>
+                <h2>Выберите чат, чтобы начать жужжать! 🍯</h2>
+                <p>Или создайте новый чат с друзьями</p>
+            </div>
+            
+            <div id="chat-container" class="chat-container" style="display: none;">
+                <!-- Шапка чата -->
+                <div class="chat-header">
+                    <div class="chat-header-info">
+                        <img id="chat-avatar" src="" alt="Avatar" class="avatar-medium">
+                        <div>
+                            <div class="chat-name" id="chat-name">Чат</div>
+                            <div class="chat-status" id="chat-status">онлайн</div>
+                        </div>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button class="btn-icon" onclick="openChatInfo()" title="Информация">
+                            ℹ️
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Сообщения -->
+                <div class="messages-container" id="messages-container">
+                    <!-- Сообщения будут здесь -->
+                </div>
+                
+                <!-- Индикатор печати -->
+                <div id="typing-indicator" class="typing-indicator" style="display: none;">
+                    <span id="typing-user"></span> печатает...
+                </div>
+                
+                <!-- Поле ввода -->
+                <div class="message-input-container">
+                    <button class="btn-icon" onclick="openStickers()" title="Стикеры">
+                        😊
+                    </button>
+                    <button class="btn-icon" onclick="openFileUpload()" title="Файл">
+                        📎
+                    </button>
+                    <input type="file" id="file-input" style="display: none;" onchange="uploadFile(this)">
+                    <textarea id="message-input" placeholder="Напишите сообщение... 🐝" 
+                              onkeypress="handleMessageKeyPress(event)" 
+                              oninput="handleTyping()" 
+                              rows="1"></textarea>
+                    <button class="btn-send" onclick="sendMessage()">
+                        ➤
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Панель профиля (справа) -->
+        <div id="profile-panel" class="profile-panel">
+            <div class="profile-header">
+                <h2>Мой профиль 🐝</h2>
+                <button class="btn-close" onclick="closeProfile()">✕</button>
+            </div>
+            
+            <div class="profile-content">
+                <div class="profile-avatar-section">
+                    <img id="profile-avatar" src="/uploads/avatars/default.png" alt="Avatar" class="avatar-large">
+                    <button class="btn-secondary" onclick="changeAvatar()">
+                        Изменить фото 📸
+                    </button>
+                    <input type="file" id="avatar-input" style="display: none;" accept="image/*" onchange="uploadAvatar(this)">
+                </div>
+                
+                <div class="profile-info">
+                    <div class="profile-field">
+                        <label>✨ Никнейм</label>
+                        <input type="text" id="profile-nickname" placeholder="Ваш никнейм">
+                    </div>
+                    
+                    <div class="profile-field">
+                        <label>👤 Username</label>
+                        <input type="text" id="profile-username" readonly>
+                    </div>
+                    
+                    <div class="profile-field">
+                        <label>📝 О себе</label>
+                        <textarea id="profile-bio" placeholder="Расскажите о себе..." rows="3"></textarea>
+                    </div>
+                    
+                    <div class="profile-field">
+                        <label>💬 Статус</label>
+                        <input type="text" id="profile-status" placeholder="Жужжу в BeeGramm 🐝">
+                    </div>
+                    
+                    <div class="profile-stats">
+                        <div class="stat">
+                            <div class="stat-value" id="profile-stars">100</div>
+                            <div class="stat-label">🐝 Пчёлки</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-value" id="profile-premium">
+                                <span id="premium-badge">Обычный</span>
+                            </div>
+                            <div class="stat-label">Статус</div>
+                        </div>
+                    </div>
+                    
+                    <button class="btn-primary" onclick="saveProfile()">
+                        Сохранить изменения 💾
+                    </button>
+                    
+                    <div class="premium-section">
+                        <h3>👑 BeeGramm Premium</h3>
+                        <ul>
+                            <li>✨ Золотая пчёлка рядом с именем</li>
+                            <li>📁 Загрузка файлов до 100МБ</li>
+                            <li>🎨 Эксклюзивные стикеры</li>
+                            <li>⚡ Приоритетная поддержка</li>
+                        </ul>
+                        <button class="btn-premium" onclick="alert('Премиум функция в разработке! 🐝')">
+                            Получить Premium 👑
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно создания чата -->
+    <div id="new-chat-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Новый чат 💬</h2>
+                <button class="btn-close" onclick="closeNewChatModal()">✕</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>🔍 Найти пользователя</label>
+                    <input type="text" id="user-search" placeholder="Введите username..." oninput="searchUsers()">
+                </div>
+                
+                <div id="users-list" class="users-list">
+                    <!-- Результаты поиска -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно стикеров -->
+    <div id="stickers-modal" class="modal">
+        <div class="modal-content stickers-modal">
+            <div class="modal-header">
+                <h2>Стикеры 🐝</h2>
+                <button class="btn-close" onclick="closeStickersModal()">✕</button>
+            </div>
+            
+            <div class="modal-body">
+                <div id="stickers-container" class="stickers-container">
+                    <!-- Стикеры будут здесь -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно информации о чате -->
+    <div id="chat-info-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Информация о чате ℹ️</h2>
+                <button class="btn-close" onclick="closeChatInfoModal()">✕</button>
+            </div>
+            
+            <div class="modal-body" id="chat-info-content">
+                <!-- Информация о чате -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно активации Premium -->
+    <div id="premium-modal" class="modal">
+        <div class="modal-content premium-modal">
+            <div class="modal-header premium-header">
+                <h2>⭐ BeeGramm Premium</h2>
+                <button class="btn-close" onclick="closePremiumModal()">✕</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="premium-features">
+                    <h3>Преимущества Premium:</h3>
+                    <ul class="premium-list">
+                        <li>✨ Загрузка файлов до 100 МБ (вместо 10 МБ)</li>
+                        <li>🎨 Эксклюзивные стикеры</li>
+                        <li>👑 Значок Premium в профиле</li>
+                        <li>🐝 Больше пчёлок при регистрации</li>
+                        <li>🚀 Приоритетная поддержка</li>
+                    </ul>
+                    
+                    <div class="premium-price">
+                        <span class="price-amount">199 ₽</span>
+                        <span class="price-period">навсегда</span>
+                    </div>
+                    
+                    <div class="premium-activation">
+                        <p>Купите ключ на FunPay и активируйте здесь:</p>
+                        <input type="text" id="premium-key-input" placeholder="BEE-XXXX-XXXX" class="premium-key-input">
+                        <button class="btn-premium" onclick="activatePremium()">
+                            🎉 Активировать Premium
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Анимация пчёлки при отправке сообщения -->
+    <div id="bee-fly-animation" class="bee-fly-animation">🐝</div>
+    
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
