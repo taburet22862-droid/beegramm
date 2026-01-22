@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>👑 Админ-панель - BeeGramm</title>
+    <link rel="stylesheet" href="/static/css/admin.css">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Боковая панель -->
+        <aside class="admin-sidebar">
+            <div class="admin-logo">
+                <h1>👑 BeeGramm</h1>
+                <p>Админ-панель</p>
+            </div>
+            
+            <nav class="admin-nav">
+                <a href="#dashboard" class="nav-item active" onclick="showSection('dashboard')">
+                    📊 Дашборд
+                </a>
+                <a href="#users" class="nav-item" onclick="showSection('users')">
+                    👥 Пользователи
+                </a>
+                <a href="#channels" class="nav-item" onclick="showSection('channels')">
+                    📢 Каналы
+                </a>
+                <a href="#groups" class="nav-item" onclick="showSection('groups')">
+                    👥 Группы
+                </a>
+                <a href="#keys" class="nav-item" onclick="showSection('keys')">
+                    🔑 Premium ключи
+                </a>
+                <a href="#stickers" class="nav-item" onclick="showSection('stickers')">
+                    🎨 Стикеры
+                </a>
+                <a href="#messages" class="nav-item" onclick="showSection('messages')">
+                    📨 Сообщения
+                </a>
+                <a href="#settings" class="nav-item" onclick="showSection('settings')">
+                    ⚙️ Настройки
+                </a>
+            </nav>
+            
+            <div class="admin-user">
+                <div class="admin-user-info">
+                    <img id="admin-avatar" src="/uploads/avatars/default.png" alt="Avatar">
+                    <div>
+                        <div id="admin-name">Администратор</div>
+                        <div class="admin-role">👑 Админ</div>
+                    </div>
+                </div>
+                <button class="btn-logout" onclick="backToApp()">
+                    ← Вернуться в чат
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Основной контент -->
+        <main class="admin-main">
+            <!-- Дашборд -->
+            <section id="section-dashboard" class="admin-section active">
+                <div class="section-header">
+                    <h2>📊 Дашборд</h2>
+                    <p>Общая статистика системы</p>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-users">0</div>
+                            <div class="stat-label">Пользователей</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">⭐</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-premium">0</div>
+                            <div class="stat-label">Premium</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">💬</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-chats">0</div>
+                            <div class="stat-label">Чатов</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">📨</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-messages">0</div>
+                            <div class="stat-label">Сообщений</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">🔑</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-keys-available">0</div>
+                            <div class="stat-label">Доступных ключей</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">🐝</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="stat-total-stars">0</div>
+                            <div class="stat-label">Всего пчёлок</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="recent-activity">
+                    <h3>📈 Последняя активность</h3>
+                    <div id="recent-users" class="activity-list">
+                        <!-- Последние пользователи -->
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Пользователи -->
+            <section id="section-users" class="admin-section">
+                <div class="section-header">
+                    <h2>👥 Управление пользователями</h2>
+                    <div class="section-actions">
+                        <input type="text" id="user-search" placeholder="🔍 Поиск пользователей..." class="search-input">
+                    </div>
+                </div>
+                
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Пользователь</th>
+                                <th>Статус</th>
+                                <th>Пчёлки</th>
+                                <th>Дата регистрации</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <!-- Пользователи -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- Premium ключи -->
+            <section id="section-keys" class="admin-section">
+                <div class="section-header">
+                    <h2>🔑 Premium ключи</h2>
+                    <div class="section-actions">
+                        <button class="btn-primary" onclick="showGenerateKeysModal()">
+                            ➕ Сгенерировать ключи
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="keys-grid" id="keys-grid">
+                    <!-- Ключи -->
+                </div>
+            </section>
+            
+            <!-- Каналы -->
+            <section id="section-channels" class="admin-section">
+                <div class="section-header">
+                    <h2>📢 Все каналы</h2>
+                </div>
+                
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Название</th>
+                                <th>Описание</th>
+                                <th>Подписчиков</th>
+                                <th>Создатель</th>
+                                <th>Создан</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="channels-table-body">
+                            <!-- Каналы -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- Группы -->
+            <section id="section-groups" class="admin-section">
+                <div class="section-header">
+                    <h2>👥 Все группы</h2>
+                </div>
+                
+                <div class="table-container">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Название</th>
+                                <th>Описание</th>
+                                <th>Участников</th>
+                                <th>Создатель</th>
+                                <th>Создан</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groups-table-body">
+                            <!-- Группы -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <!-- Стикеры -->
+            <section id="section-stickers" class="admin-section">
+                <div class="section-header">
+                    <h2>🎨 Управление стикерами</h2>
+                    <div class="section-actions">
+                        <button class="btn-primary" onclick="showAddStickerPackModal()">
+                            ➕ Добавить стикерпак
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="sticker-packs-list" class="sticker-packs-list">
+                    <!-- Стикерпаки -->
+                </div>
+            </section>
+            
+            <!-- Сообщения -->
+            <section id="section-messages" class="admin-section">
+                <div class="section-header">
+                    <h2>📨 Последние сообщения</h2>
+                </div>
+                
+                <div id="messages-list" class="messages-list">
+                    <!-- Сообщения -->
+                </div>
+            </section>
+            
+            <!-- Настройки -->
+            <section id="section-settings" class="admin-section">
+                <div class="section-header">
+                    <h2>⚙️ Настройки системы</h2>
+                </div>
+                
+                <div class="settings-grid">
+                    <div class="setting-card">
+                        <h3>💰 Цена Premium</h3>
+                        <input type="number" value="199" class="setting-input">
+                        <button class="btn-save">Сохранить</button>
+                    </div>
+                    
+                    <div class="setting-card">
+                        <h3>🐝 Начальные пчёлки</h3>
+                        <input type="number" value="100" class="setting-input">
+                        <button class="btn-save">Сохранить</button>
+                    </div>
+                    
+                    <div class="setting-card">
+                        <h3>📁 Макс. размер файла (МБ)</h3>
+                        <input type="number" value="10" class="setting-input">
+                        <button class="btn-save">Сохранить</button>
+                    </div>
+                    
+                    <div class="setting-card">
+                        <h3>⭐ Макс. размер для Premium (МБ)</h3>
+                        <input type="number" value="100" class="setting-input">
+                        <button class="btn-save">Сохранить</button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <!-- Модальное окно генерации ключей -->
+    <div id="generate-keys-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🔑 Генерация Premium ключей</h3>
+                <button class="btn-close" onclick="closeGenerateKeysModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <label>Количество ключей:</label>
+                <input type="number" id="keys-count" value="5" min="1" max="100" class="modal-input">
+                <button class="btn-primary btn-block" onclick="generateKeys()">
+                    Сгенерировать
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/js/admin.js"></script>
+</body>
+</html>
