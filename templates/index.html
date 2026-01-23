@@ -41,7 +41,7 @@
             <div id="register-form" class="auth-form">
                 <div class="form-group">
                     <label>👤 Имя пользователя</label>
-                    <input type="text" id="register-username" placeholder="username">
+                    <input type="text" id="register-username" placeholder="username" maxlength="32" pattern="[A-Za-z0-9]+" title="Только английские буквы и цифры" oninput="sanitizeUsernameInput(this)">
                 </div>
                 <div class="form-group">
                     <label>✨ Никнейм</label>
@@ -55,6 +55,31 @@
                     Создать аккаунт 🍯
                 </button>
                 <div id="register-error" class="error-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно каналов -->
+    <div id="channels-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Каналы 📢</h2>
+                <button class="btn-close" onclick="closeChannelsModal()">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>🔍 Найти канал</label>
+                    <input type="text" id="channel-search" placeholder="Введите название..." oninput="searchChannels()">
+                </div>
+
+                <div class="channels-actions">
+                    <button class="btn-primary" onclick="createChannelPrompt()">➕ Создать канал</button>
+                </div>
+
+                <div id="channels-list" class="channels-list">
+                    <!-- Каналы -->
+                </div>
             </div>
         </div>
     </div>
@@ -75,6 +100,12 @@
                     <button class="btn-icon btn-premium-activate" onclick="openPremiumModal()" title="BeeGramm Premium" id="premium-btn">
                         ⭐
                     </button>
+                    <button class="btn-icon" onclick="openSupport()" title="Поддержка" id="support-btn">
+                        🛟
+                    </button>
+                    <button class="btn-icon" onclick="openChannels()" title="Каналы" id="channels-btn">
+                        📢
+                    </button>
                     <button class="btn-icon" onclick="toggleTheme()" title="Сменить тему" id="theme-toggle">
                         🌙
                     </button>
@@ -83,6 +114,9 @@
                     </button>
                     <button class="btn-icon" onclick="window.location.href='/admin'" title="Админ-панель" id="admin-btn" style="display: none;">
                         👑
+                    </button>
+                    <button class="btn-icon" onclick="window.location.href='/moderator'" title="Модер-панель" id="moderator-btn" style="display: none;">
+                        🛡️
                     </button>
                 </div>
             </div>
@@ -115,6 +149,9 @@
                         </div>
                     </div>
                     <div class="chat-header-actions">
+                        <button class="btn-icon" onclick="startVoiceCall()" title="Звонок" id="call-btn" style="display:none;">
+                            📞
+                        </button>
                         <button class="btn-icon" onclick="openChatInfo()" title="Информация">
                             ℹ️
                         </button>
@@ -136,14 +173,20 @@
                     <button class="btn-icon" onclick="openStickers()" title="Стикеры">
                         😊
                     </button>
+                    <button class="btn-icon" onclick="toggleVoiceRecord()" title="Голосовое" id="voice-btn">
+                        🎤
+                    </button>
                     <button class="btn-icon" onclick="openFileUpload()" title="Файл">
                         📎
                     </button>
                     <input type="file" id="file-input" style="display: none;" onchange="uploadFile(this)">
-                    <textarea id="message-input" placeholder="Напишите сообщение... 🐝" 
+                    <div class="message-input-wrap">
+                        <textarea id="message-input" placeholder="Напишите сообщение... 🐝" 
                               onkeypress="handleMessageKeyPress(event)" 
                               oninput="handleTyping()" 
                               rows="1"></textarea>
+                        <div class="message-counter" id="message-counter">0/500</div>
+                    </div>
                     <button class="btn-send" onclick="sendMessage()">
                         ➤
                     </button>
@@ -160,7 +203,7 @@
             
             <div class="profile-content">
                 <div class="profile-avatar-section">
-                    <img id="profile-avatar" src="/uploads/avatars/default.png" alt="Avatar" class="avatar-large">
+                    <img id="profile-avatar" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👤</text></svg>" alt="Avatar" class="avatar-large">
                     <button class="btn-secondary" onclick="changeAvatar()">
                         Изменить фото 📸
                     </button>
@@ -213,10 +256,27 @@
                             <li>🎨 Эксклюзивные стикеры</li>
                             <li>⚡ Приоритетная поддержка</li>
                         </ul>
+
+                        <div class="profile-field" style="margin-top: 15px;">
+                            <label>🖼️ Обои чата (Premium)</label>
+                            <select id="premium-wallpaper" onchange="setPremiumWallpaper(this.value)" style="width: 100%; padding: 12px 16px; border-radius: 10px; border: 2px solid var(--bee-yellow);">
+                                <option value="default">По умолчанию</option>
+                                <option value="honey">Мёд</option>
+                                <option value="lavender">Лаванда</option>
+                                <option value="night">Ночь</option>
+                            </select>
+                            <div id="premium-wallpaper-hint" style="margin-top: 8px; font-size: 13px; color: #666;">
+                                Доступно только для Premium
+                            </div>
+                        </div>
                         <button class="btn-premium" onclick="alert('Премиум функция в разработке! 🐝')">
                             Получить Premium 👑
                         </button>
                     </div>
+
+                    <button class="btn-secondary" onclick="logout()" style="margin-top: 15px; background: #fff; border: 2px solid #ff6b6b; color: #ff6b6b;">
+                        Выйти из аккаунта 🚪
+                    </button>
                 </div>
             </div>
         </div>
@@ -305,6 +365,42 @@
                         </button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="early-access-modal" class="modal">
+        <div class="modal-content" style="max-width: 560px;">
+            <div class="modal-header">
+                <h2>🗝️ Early Access</h2>
+                <button class="btn-close" onclick="closeEarlyAccessModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 12px;">BeeGramm сейчас в разработке. Для доступа нужен ключ раннего доступа.</p>
+                <div class="form-group">
+                    <label>Ключ</label>
+                    <input type="text" id="early-access-key-input" placeholder="EA-XXXX-XXXX" style="text-transform: uppercase;">
+                </div>
+                <button class="btn-primary" onclick="activateEarlyAccess()">Активировать</button>
+                <div id="early-access-error" class="error-message" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="call-modal" class="modal">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header">
+                <h2 id="call-title">📞 Звонок</h2>
+                <button class="btn-close" onclick="hangupCall()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="call-status" style="margin-bottom: 12px; color: var(--gray-dark);">—</div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn-primary" id="call-accept" onclick="acceptCall()" style="display:none;">Принять</button>
+                    <button class="btn-danger" id="call-hangup" onclick="hangupCall()">Сбросить</button>
+                    <button class="btn-secondary" id="call-mute" onclick="toggleMute()" style="display:none;">Микрофон</button>
+                </div>
+                <audio id="remote-audio" autoplay></audio>
             </div>
         </div>
     </div>
