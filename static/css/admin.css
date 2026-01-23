@@ -484,6 +484,95 @@ body {
     gap: 15px;
 }
 
+.admin-cmd {
+    margin-top: 25px;
+    background: #0b0f14;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.admin-cmd-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0));
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-cmd-header h3 {
+    margin: 0;
+    color: #e5e7eb;
+    font-size: 16px;
+}
+
+.admin-cmd-hint {
+    color: rgba(229, 231, 235, 0.7);
+    font-size: 12px;
+}
+
+.admin-cmd-output {
+    height: 220px;
+    padding: 14px 16px;
+    overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #d1d5db;
+}
+
+.admin-cmd-line {
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 6px;
+}
+
+.admin-cmd-input-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.admin-cmd-prompt {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color: #22c55e;
+    font-size: 13px;
+}
+
+.admin-cmd-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #e5e7eb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 13px;
+    padding: 0;
+}
+
+.admin-cmd-input::placeholder {
+    color: rgba(229, 231, 235, 0.45);
+}
+
+.admin-cmd-caret {
+    width: 8px;
+    height: 16px;
+    background: rgba(229, 231, 235, 0.9);
+    border-radius: 2px;
+    animation: adminCmdBlink 1s steps(1) infinite;
+}
+
+@keyframes adminCmdBlink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+}
+
 .activity-item {
     display: flex;
     align-items: center;
