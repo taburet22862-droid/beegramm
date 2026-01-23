@@ -4,6 +4,369 @@ let socket;
 let currentUser = null;
 let currentChat = null;
 let typingTimeout = null;
+let voiceRecorder = null;
+let voiceChunks = [];
+let isRecording = false;
+let lastNotifiedAt = 0;
+
+let rtcPc = null;
+let rtcLocalStream = null;
+let rtcPeerUserId = null;
+let rtcIncomingOffer = null;
+let rtcMuted = false;
+
+const RTC_ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+function getMaxMessageLength() {
+    return currentUser?.is_premium ? 1000 : 500;
+}
+
+async function ensurePeerConnection(toUserId) {
+    if (rtcPc) return;
+
+    rtcPeerUserId = toUserId;
+    rtcPc = new RTCPeerConnection({ iceServers: RTC_ICE_SERVERS });
+
+    rtcPc.onicecandidate = (event) => {
+        if (!event.candidate || !socket || !rtcPeerUserId || !currentChat) return;
+        socket.emit('call_ice', { to_user_id: rtcPeerUserId, chat_id: currentChat.id, candidate: event.candidate });
+    };
+
+    rtcPc.ontrack = (event) => {
+        const audio = document.getElementById('remote-audio');
+        if (audio && event.streams && event.streams[0]) {
+            audio.srcObject = event.streams[0];
+        }
+    };
+
+    rtcPc.onconnectionstatechange = () => {
+        if (!rtcPc) return;
+        const st = rtcPc.connectionState;
+        if (st === 'connected') {
+            setCallStatus('✅ На связи');
+            const muteBtn = document.getElementById('call-mute');
+            if (muteBtn) muteBtn.style.display = 'inline-block';
+        }
+        if (st === 'failed' || st === 'disconnected' || st === 'closed') {
+            // cleanup happens on hangup
+        }
+    };
+}
+
+async function getLocalAudioStream() {
+    if (rtcLocalStream) return rtcLocalStream;
+    rtcLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    return rtcLocalStream;
+}
+
+function openCallModal(text, incoming) {
+    const modal = document.getElementById('call-modal');
+    if (!modal) return;
+    modal.classList.add('open');
+    const accept = document.getElementById('call-accept');
+    if (accept) accept.style.display = incoming ? 'inline-block' : 'none';
+    const muteBtn = document.getElementById('call-mute');
+    if (muteBtn) muteBtn.style.display = 'none';
+    setCallStatus(text || '...');
+}
+
+function setCallStatus(text) {
+    const el = document.getElementById('call-status');
+    if (el) el.textContent = text;
+}
+
+function closeCallModalSoon() {
+    const modal = document.getElementById('call-modal');
+    if (!modal) return;
+    setTimeout(() => {
+        modal.classList.remove('open');
+    }, 800);
+}
+
+function cleanupCall() {
+    rtcIncomingOffer = null;
+    rtcPeerUserId = null;
+    rtcMuted = false;
+    const muteBtn = document.getElementById('call-mute');
+    if (muteBtn) muteBtn.textContent = 'Микрофон';
+
+    try {
+        if (rtcPc) {
+            rtcPc.ontrack = null;
+            rtcPc.onicecandidate = null;
+            rtcPc.close();
+        }
+    } catch (e) {}
+    rtcPc = null;
+
+    try {
+        if (rtcLocalStream) {
+            rtcLocalStream.getTracks().forEach(t => t.stop());
+        }
+    } catch (e) {}
+    rtcLocalStream = null;
+
+    const audio = document.getElementById('remote-audio');
+    if (audio) audio.srcObject = null;
+}
+
+async function startVoiceCall() {
+    if (!socket || !currentChat || !currentChat.other_user) return;
+    if (!isPrivateChat(currentChat)) return;
+    if (rtcPc) {
+        alert('Звонок уже активен');
+        return;
+    }
+
+    openCallModal('📞 Звоним...', false);
+    try {
+        await ensurePeerConnection(currentChat.other_user.id);
+        const stream = await getLocalAudioStream();
+        stream.getTracks().forEach(track => rtcPc.addTrack(track, stream));
+
+        const offer = await rtcPc.createOffer();
+        await rtcPc.setLocalDescription(offer);
+
+        socket.emit('call_offer', {
+            to_user_id: currentChat.other_user.id,
+            chat_id: currentChat.id,
+            sdp: offer
+        });
+        setCallStatus('Ожидаем ответа...');
+    } catch (e) {
+        console.error('Call start error:', e);
+        alert('Не удалось начать звонок (нет доступа к микрофону?)');
+        cleanupCall();
+        const modal = document.getElementById('call-modal');
+        if (modal) modal.classList.remove('open');
+    }
+}
+
+async function acceptCall() {
+    if (!socket || !currentChat || !rtcPeerUserId || !rtcIncomingOffer) return;
+    if (rtcPc) {
+        // если почему-то уже есть
+        return;
+    }
+
+    try {
+        await ensurePeerConnection(rtcPeerUserId);
+        const stream = await getLocalAudioStream();
+        stream.getTracks().forEach(track => rtcPc.addTrack(track, stream));
+
+        await rtcPc.setRemoteDescription(new RTCSessionDescription(rtcIncomingOffer));
+        const answer = await rtcPc.createAnswer();
+        await rtcPc.setLocalDescription(answer);
+
+        socket.emit('call_answer', {
+            to_user_id: rtcPeerUserId,
+            chat_id: currentChat.id,
+            sdp: answer
+        });
+
+        rtcIncomingOffer = null;
+        setCallStatus('Соединяемся...');
+        const accept = document.getElementById('call-accept');
+        if (accept) accept.style.display = 'none';
+    } catch (e) {
+        console.error('Accept call error:', e);
+        alert('Не удалось принять звонок');
+        hangupCall();
+    }
+}
+
+function hangupCall() {
+    try {
+        if (socket && currentChat && rtcPeerUserId) {
+            socket.emit('call_hangup', { to_user_id: rtcPeerUserId, chat_id: currentChat.id });
+        }
+    } catch (e) {}
+    cleanupCall();
+    const modal = document.getElementById('call-modal');
+    if (modal) modal.classList.remove('open');
+}
+
+function toggleMute() {
+    if (!rtcLocalStream) return;
+    rtcMuted = !rtcMuted;
+    rtcLocalStream.getAudioTracks().forEach(t => (t.enabled = !rtcMuted));
+    const btn = document.getElementById('call-mute');
+    if (btn) btn.textContent = rtcMuted ? '🔇 Микрофон выкл' : '🎤 Микрофон вкл';
+}
+
+async function reportMessage(messageId) {
+    if (!currentChat) return;
+    const reason = (prompt('Причина жалобы (можно оставить пусто):') || '').trim();
+    try {
+        const res = await fetch('/reports/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message_id: messageId, chat_id: currentChat.id, reason })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            alert(data.error || 'Ошибка отправки жалобы');
+            return;
+        }
+        showToast('Жалоба отправлена');
+    } catch (e) {
+        console.error('Report failed:', e);
+        alert('Ошибка отправки жалобы');
+    }
+}
+
+async function logout() {
+    try {
+        await fetch('/logout', { method: 'POST' });
+    } catch (e) {
+        // игнор
+    }
+
+    try {
+        localStorage.removeItem('beegram_user');
+    } catch (e) {
+        // игнор
+    }
+    window.location.reload();
+}
+
+function notifyIncoming(message) {
+    const now = Date.now();
+    if (now - lastNotifiedAt < 1200) return;
+    lastNotifiedAt = now;
+
+    playMessageSound();
+    showToast('📨 Новое сообщение');
+}
+
+function showToast(text) {
+    let toast = document.getElementById('toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'toast';
+        toast.style.position = 'fixed';
+        toast.style.right = '20px';
+        toast.style.bottom = '20px';
+        toast.style.background = 'rgba(0,0,0,0.8)';
+        toast.style.color = '#fff';
+        toast.style.padding = '12px 14px';
+        toast.style.borderRadius = '12px';
+        toast.style.zIndex = '20000';
+        toast.style.fontSize = '14px';
+        toast.style.maxWidth = '260px';
+        toast.style.boxShadow = '0 10px 30px rgba(0,0,0,0.25)';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = text;
+    toast.style.opacity = '1';
+    clearTimeout(toast._hideT);
+    toast._hideT = setTimeout(() => {
+        toast.style.opacity = '0';
+    }, 2200);
+}
+
+async function toggleVoiceRecord() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+        alert('Голосовые сообщения не поддерживаются в этом браузере');
+        return;
+    }
+
+    if (isRecording) {
+        try {
+            voiceRecorder.stop();
+        } catch (e) {}
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        voiceChunks = [];
+        voiceRecorder = new MediaRecorder(stream);
+        voiceRecorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) voiceChunks.push(e.data);
+        };
+        voiceRecorder.onstop = async () => {
+            try {
+                stream.getTracks().forEach(t => t.stop());
+            } catch (e) {}
+            isRecording = false;
+            updateVoiceButton();
+
+            const blob = new Blob(voiceChunks, { type: voiceRecorder.mimeType || 'audio/webm' });
+            if (blob.size === 0) return;
+            await uploadAndSendVoice(blob);
+        };
+        isRecording = true;
+        updateVoiceButton();
+        voiceRecorder.start();
+    } catch (error) {
+        console.error('Ошибка записи:', error);
+        alert('Не удалось включить микрофон');
+    }
+}
+
+function updateVoiceButton() {
+    const btn = document.getElementById('voice-btn');
+    if (!btn) return;
+    btn.textContent = isRecording ? '⏹️' : '🎤';
+}
+
+async function uploadAndSendVoice(blob) {
+    if (!currentChat) return;
+    try {
+        const formData = new FormData();
+        const ext = (blob.type || '').includes('ogg') ? 'ogg' : 'webm';
+        formData.append('file', blob, `voice.${ext}`);
+        const response = await fetch('/upload/voice', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        if (!data.success) {
+            alert(data.error || 'Ошибка загрузки голосового');
+            return;
+        }
+
+        socket.emit('send_message', {
+            chat_id: currentChat.id,
+            user_id: currentUser.id,
+            content: '',
+            message_type: 'voice',
+            file_url: data.file_url
+        });
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка загрузки голосового');
+    }
+}
+
+function sendImageSticker(fileUrl) {
+    if (!currentChat || !socket) return;
+
+    socket.emit('send_message', {
+        chat_id: currentChat.id,
+        user_id: currentUser.id,
+        content: '',
+        message_type: 'image',
+        file_url: fileUrl
+    });
+
+    closeStickersModal();
+}
+
+function updateMessageCounter() {
+    const input = document.getElementById('message-input');
+    const counter = document.getElementById('message-counter');
+    if (!input || !counter) return;
+    
+    const maxLen = getMaxMessageLength();
+    const len = input.value.length;
+    counter.textContent = `${len}/${maxLen}`;
+    
+    const isOver = len > maxLen;
+    counter.classList.toggle('over', isOver);
+    input.classList.toggle('too-long', isOver);
+}
 
 // ============= ИНИЦИАЛИЗАЦИЯ =============
 
@@ -34,12 +397,56 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('dark-theme');
         document.getElementById('theme-toggle').textContent = '☀️';
     }
+
+    // Применяем сохранённые обои (Premium)
+    applyPremiumWallpaperFromStorage();
 });
+
+function applyPremiumWallpaperFromStorage() {
+    // Обои — косметика, храним локально. Но применять разрешаем только Premium.
+    const wallpaper = localStorage.getItem('beegram_wallpaper') || 'default';
+    const allowed = new Set(['default', 'honey', 'lavender', 'night']);
+    const normalized = allowed.has(wallpaper) ? wallpaper : 'default';
+
+    document.body.classList.remove('wallpaper-honey', 'wallpaper-lavender', 'wallpaper-night');
+    if (currentUser?.is_premium) {
+        if (normalized === 'honey') document.body.classList.add('wallpaper-honey');
+        if (normalized === 'lavender') document.body.classList.add('wallpaper-lavender');
+        if (normalized === 'night') document.body.classList.add('wallpaper-night');
+    }
+}
+
+function setPremiumWallpaper(value) {
+    const allowed = new Set(['default', 'honey', 'lavender', 'night']);
+    const normalized = allowed.has(value) ? value : 'default';
+
+    if (!currentUser?.is_premium) {
+        alert('Эта функция доступна только для Premium 👑');
+        const select = document.getElementById('premium-wallpaper');
+        if (select) select.value = 'default';
+        localStorage.removeItem('beegram_wallpaper');
+        applyPremiumWallpaperFromStorage();
+        return;
+    }
+
+    localStorage.setItem('beegram_wallpaper', normalized);
+    applyPremiumWallpaperFromStorage();
+}
 
 // ============= АВТОРИЗАЦИЯ =============
 
+function sanitizeUsernameInput(inputEl) {
+    if (!inputEl) return;
+    const cleaned = String(inputEl.value || '').replace(/[^A-Za-z0-9]/g, '');
+    if (inputEl.value !== cleaned) {
+        inputEl.value = cleaned;
+    }
+}
+
 async function register() {
-    const username = document.getElementById('register-username').value.trim();
+    const usernameEl = document.getElementById('register-username');
+    sanitizeUsernameInput(usernameEl);
+    const username = usernameEl.value.trim();
     const nickname = document.getElementById('register-nickname').value.trim();
     const password = document.getElementById('register-password').value;
     const errorDiv = document.getElementById('register-error');
@@ -48,6 +455,11 @@ async function register() {
     
     if (!username || !password) {
         errorDiv.textContent = 'Заполните все обязательные поля!';
+        return;
+    }
+
+    if (!/^[A-Za-z0-9]+$/.test(username)) {
+        errorDiv.textContent = 'Username может содержать только английские буквы и цифры (без пробелов и символов)';
         return;
     }
     
@@ -72,6 +484,147 @@ async function register() {
     }
 }
 
+async function openSupport() {
+    try {
+        const response = await fetch('/support/open', {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+            alert(data.error || 'Поддержка недоступна');
+            return;
+        }
+
+        await loadChats();
+        const chats = await fetch('/chats/list').then(r => r.json());
+        const supportChat = chats.chats?.find(c => c.id === data.chat_id);
+        if (supportChat) {
+            openChat(supportChat);
+        }
+    } catch (error) {
+        console.error('Ошибка поддержки:', error);
+        alert('Ошибка открытия поддержки');
+    }
+}
+
+// ============= КАНАЛЫ =============
+
+function openChannels() {
+    document.getElementById('channels-modal').classList.add('open');
+    const input = document.getElementById('channel-search');
+    if (input) input.value = '';
+    const list = document.getElementById('channels-list');
+    if (list) list.innerHTML = '';
+}
+
+function closeChannelsModal() {
+    document.getElementById('channels-modal').classList.remove('open');
+}
+
+let channelSearchTimeout;
+async function searchChannels() {
+    const query = document.getElementById('channel-search').value.trim();
+    const list = document.getElementById('channels-list');
+    if (!list) return;
+
+    clearTimeout(channelSearchTimeout);
+
+    if (query.length < 2) {
+        list.innerHTML = '';
+        return;
+    }
+
+    channelSearchTimeout = setTimeout(async () => {
+        try {
+            const response = await fetch(`/channels/search?q=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            renderChannelsList(data.channels || []);
+        } catch (error) {
+            console.error('Ошибка поиска каналов:', error);
+        }
+    }, 300);
+}
+
+function renderChannelsList(channels) {
+    const list = document.getElementById('channels-list');
+    if (!list) return;
+
+    if (channels.length === 0) {
+        list.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Каналы не найдены</div>';
+        return;
+    }
+
+    list.innerHTML = channels.map(ch => `
+        <div class="channel-item">
+            <div class="channel-info">
+                <div class="channel-name">${escapeHtml(ch.name || 'Канал')}</div>
+                <div class="channel-meta">${escapeHtml(ch.description || '')} • ${(ch.subscribers_count || 0)} 👥</div>
+            </div>
+            <button class="btn-primary" style="width:auto; padding:10px 14px;" onclick="subscribeChannel(${ch.id})">Подписаться</button>
+        </div>
+    `).join('');
+}
+
+async function subscribeChannel(channelId) {
+    try {
+        const response = await fetch(`/channels/${channelId}/subscribe`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        if (!data.success) {
+            alert(data.error || 'Ошибка подписки');
+            return;
+        }
+
+        closeChannelsModal();
+        await loadChats();
+
+        const chatsData = await fetch('/chats/list').then(r => r.json());
+        const newChat = chatsData.chats?.find(c => c.id === channelId);
+        if (newChat) {
+            openChat(newChat);
+        }
+    } catch (error) {
+        console.error('Ошибка подписки на канал:', error);
+        alert('Ошибка подписки на канал');
+    }
+}
+
+async function createChannelPrompt() {
+    const name = prompt('Название канала:');
+    if (!name) return;
+    const description = prompt('Описание (не обязательно):', '') || '';
+
+    try {
+        const response = await fetch('/chats/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                is_channel: true,
+                name,
+                description
+            })
+        });
+        const data = await response.json();
+        if (!data.success) {
+            alert(data.error || 'Ошибка создания канала');
+            return;
+        }
+
+        closeChannelsModal();
+        await loadChats();
+        const chatsData = await fetch('/chats/list').then(r => r.json());
+        const newChat = chatsData.chats?.find(c => c.id === data.chat_id);
+        if (newChat) {
+            openChat(newChat);
+        }
+    } catch (error) {
+        console.error('Ошибка создания канала:', error);
+        alert('Ошибка создания канала');
+    }
+}
+
 async function login() {
     const username = document.getElementById('login-username').value.trim();
     const password = document.getElementById('login-password').value;
@@ -90,19 +643,27 @@ async function login() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
         });
-        
-        const data = await response.json();
-        
-        if (data.success) {
+
+        const contentType = response.headers.get('content-type') || '';
+        let data = null;
+        if (contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            throw new Error(`Non-JSON response (${response.status}): ${text.slice(0, 200)}`);
+        }
+
+        if (data && data.success) {
             currentUser = data.user;
             localStorage.setItem('beegram_user', JSON.stringify(currentUser));
             initApp();
         } else {
-            errorDiv.textContent = data.error || 'Ошибка входа';
+            const msg = data?.error || `Ошибка входа (HTTP ${response.status})`;
+            errorDiv.textContent = msg;
         }
     } catch (error) {
-        errorDiv.textContent = 'Ошибка соединения с сервером';
-        console.error(error);
+        errorDiv.textContent = 'Ошибка входа. Открой консоль (F12) — там причина.';
+        console.error('Login failed:', error);
     }
 }
 
@@ -112,11 +673,20 @@ function initApp() {
     // Скрываем экран авторизации
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'flex';
-    
-    // Обновляем информацию о пользователе
+
+    // Обновляем информацию пользователя
     updateUserInfo();
+
+    // Early Access gate
+    if (!hasEarlyAccess()) {
+        openEarlyAccessModal();
+        return;
+    }
+
+    // Обои могут зависеть от Premium
+    applyPremiumWallpaperFromStorage();
     
-    // Подключаемся к Socket.IO
+    // Подключаем сокет
     connectSocket();
     
     // Загружаем чаты
@@ -141,10 +711,66 @@ function updateUserInfo() {
     if (currentUser.is_admin) {
         document.getElementById('admin-btn').style.display = 'block';
     }
+
+    // Показываем кнопку модератора, если пользователь модер или админ
+    if (currentUser.is_admin || currentUser.is_moderator) {
+        const modBtn = document.getElementById('moderator-btn');
+        if (modBtn) modBtn.style.display = 'block';
+    }
     
     // Скрываем кнопку Premium, если уже есть Premium
     if (currentUser.is_premium) {
         document.getElementById('premium-btn').style.display = 'none';
+    }
+}
+
+function hasEarlyAccess() {
+    return !!(currentUser && (currentUser.early_access || currentUser.is_admin || currentUser.is_moderator));
+}
+
+function openEarlyAccessModal() {
+    const modal = document.getElementById('early-access-modal');
+    if (modal) modal.classList.add('open');
+    const err = document.getElementById('early-access-error');
+    if (err) err.textContent = '';
+    const input = document.getElementById('early-access-key-input');
+    if (input) input.value = '';
+}
+
+function closeEarlyAccessModal() {
+    const modal = document.getElementById('early-access-modal');
+    if (modal) modal.classList.remove('open');
+}
+
+async function activateEarlyAccess() {
+    const input = document.getElementById('early-access-key-input');
+    const err = document.getElementById('early-access-error');
+    if (err) err.textContent = '';
+    const key_code = (input?.value || '').trim().toUpperCase();
+    if (!key_code) {
+        if (err) err.textContent = 'Введите ключ';
+        return;
+    }
+
+    try {
+        const res = await fetch('/early_access/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key_code })
+        });
+        const data = await res.json();
+        if (!data.success) {
+            if (err) err.textContent = data.error || 'Ошибка активации';
+            return;
+        }
+
+        currentUser.early_access = 1;
+        localStorage.setItem('beegram_user', JSON.stringify(currentUser));
+        closeEarlyAccessModal();
+        initApp();
+    } catch (e) {
+        console.error('EA activate error:', e);
+        if (err) err.textContent = 'Ошибка соединения';
     }
 }
 
@@ -162,7 +788,8 @@ function connectSocket() {
     });
     
     socket.on('new_message', (message) => {
-        if (currentChat && message.chat_id === currentChat.id) {
+        const isCurrent = currentChat && message.chat_id === currentChat.id;
+        if (isCurrent) {
             appendMessage(message);
             scrollToBottom();
         }
@@ -170,8 +797,11 @@ function connectSocket() {
         // Обновляем список чатов
         loadChats();
         
-        // Воспроизводим звук (можно добавить)
-        playMessageSound();
+        // Уведомление только если это не текущий чат или вкладка не активна
+        const shouldNotify = (!isCurrent) || document.hidden;
+        if (shouldNotify) {
+            notifyIncoming(message);
+        }
     });
     
     socket.on('reactions_updated', (data) => {
@@ -190,6 +820,65 @@ function connectSocket() {
             updateUserInfo();
         }
     });
+
+    socket.on('message_deleted', (data) => {
+        if (!data?.message_id) return;
+        markMessageDeleted(data.message_id);
+    });
+
+    socket.on('message_error', (data) => {
+        const msg = data?.error || 'Ошибка отправки сообщения';
+        alert(msg);
+        updateMessageCounter();
+    });
+
+    // ============= VOICE CALL SIGNALING =============
+
+    socket.on('call_offer', async (data) => {
+        if (!data?.from_user_id || !data?.sdp || !data?.chat_id) return;
+        if (!currentChat || currentChat.id !== data.chat_id) {
+            // игнорируем офферы не из текущего чата
+            return;
+        }
+        rtcPeerUserId = data.from_user_id;
+        rtcIncomingOffer = data.sdp;
+        openCallModal('Входящий звонок...', true);
+    });
+
+    socket.on('call_answer', async (data) => {
+        if (!rtcPc || !data?.sdp || !data?.from_user_id) return;
+        if (rtcPeerUserId !== data.from_user_id) return;
+        await rtcPc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+        setCallStatus('Соединяемся...');
+    });
+
+    socket.on('call_ice', async (data) => {
+        if (!rtcPc || !data?.candidate || !data?.from_user_id) return;
+        if (rtcPeerUserId !== data.from_user_id) return;
+        try {
+            await rtcPc.addIceCandidate(data.candidate);
+        } catch (e) {
+            // ignore
+        }
+    });
+
+    socket.on('call_hangup', (data) => {
+        if (!data?.from_user_id) return;
+        if (rtcPeerUserId && rtcPeerUserId !== data.from_user_id) return;
+        setCallStatus('Звонок завершён');
+        cleanupCall();
+        closeCallModalSoon();
+    });
+}
+
+function isPrivateChat(chat) {
+    return !!(chat && chat.other_user && !chat.is_group && !chat.is_channel);
+}
+
+function showCallButtonForChat(chat) {
+    const btn = document.getElementById('call-btn');
+    if (!btn) return;
+    btn.style.display = isPrivateChat(chat) ? 'block' : 'none';
 }
 
 // ============= ЧАТЫ =============
@@ -274,6 +963,8 @@ async function openChat(chat) {
     document.getElementById('chat-avatar').src = avatarUrl;
     document.getElementById('chat-name').textContent = chat.name || 'Чат';
     document.getElementById('chat-status').textContent = chat.other_user ? chat.other_user.status : '';
+
+    showCallButtonForChat(chat);
     
     // Присоединяемся к комнате
     if (socket) {
@@ -327,7 +1018,9 @@ function appendMessage(message) {
     
     let contentHTML = '';
     
-    if (message.message_type === 'text' || message.message_type === 'system') {
+    if (message.is_deleted) {
+        contentHTML = `<div class="message-bubble system">Сообщение удалено</div>`;
+    } else if (message.message_type === 'text' || message.message_type === 'system') {
         contentHTML = `<div class="message-bubble ${message.message_type === 'system' ? 'system' : ''}">${escapeHtml(message.content)}</div>`;
     } else if (message.message_type === 'image') {
         contentHTML = `
@@ -349,11 +1042,19 @@ function appendMessage(message) {
         `;
     } else if (message.message_type === 'sticker') {
         contentHTML = `<div class="message-bubble" style="background: transparent; font-size: 64px;">${message.content}</div>`;
+    } else if (message.message_type === 'voice') {
+        contentHTML = `
+            <div class="message-bubble">
+                <audio controls style="width: 260px; max-width: 100%;">
+                    <source src="/uploads/${message.file_url}">
+                </audio>
+            </div>
+        `;
     }
     
     // Реакции
     let reactionsHTML = '';
-    if (message.reactions && message.reactions.length > 0) {
+    if (!message.is_deleted && message.reactions && message.reactions.length > 0) {
         const reactionGroups = {};
         message.reactions.forEach(r => {
             if (!reactionGroups[r.emoji]) {
@@ -385,7 +1086,7 @@ function appendMessage(message) {
     `;
     
     // Добавляем контекстное меню для реакций
-    if (message.message_type !== 'system') {
+    if (!message.is_deleted && message.message_type !== 'system') {
         const bubble = messageDiv.querySelector('.message-bubble');
         bubble.addEventListener('contextmenu', (e) => {
             e.preventDefault();
@@ -434,6 +1135,52 @@ function showReactionMenu(event, messageId) {
         });
         menu.appendChild(btn);
     });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = '🗑️';
+    deleteBtn.style.fontSize = '20px';
+    deleteBtn.style.border = 'none';
+    deleteBtn.style.background = 'transparent';
+    deleteBtn.style.cursor = 'pointer';
+    deleteBtn.style.padding = '5px';
+    deleteBtn.style.borderRadius = '5px';
+    deleteBtn.title = 'Удалить сообщение';
+    deleteBtn.addEventListener('click', () => {
+        deleteMessage(messageId);
+        if (document.body.contains(menu)) {
+            document.body.removeChild(menu);
+        }
+    });
+    deleteBtn.addEventListener('mouseenter', () => {
+        deleteBtn.style.background = '#FFF8DC';
+    });
+    deleteBtn.addEventListener('mouseleave', () => {
+        deleteBtn.style.background = 'transparent';
+    });
+    menu.appendChild(deleteBtn);
+
+    const reportBtn = document.createElement('button');
+    reportBtn.textContent = '🚩';
+    reportBtn.style.fontSize = '20px';
+    reportBtn.style.border = 'none';
+    reportBtn.style.background = 'transparent';
+    reportBtn.style.cursor = 'pointer';
+    reportBtn.style.padding = '5px';
+    reportBtn.style.borderRadius = '5px';
+    reportBtn.title = 'Пожаловаться';
+    reportBtn.addEventListener('click', async () => {
+        await reportMessage(messageId);
+        if (document.body.contains(menu)) {
+            document.body.removeChild(menu);
+        }
+    });
+    reportBtn.addEventListener('mouseenter', () => {
+        reportBtn.style.background = '#FFF8DC';
+    });
+    reportBtn.addEventListener('mouseleave', () => {
+        reportBtn.style.background = 'transparent';
+    });
+    menu.appendChild(reportBtn);
     
     document.body.appendChild(menu);
     
@@ -446,6 +1193,30 @@ function showReactionMenu(event, messageId) {
             document.removeEventListener('click', closeMenu);
         });
     }, 100);
+}
+
+function deleteMessage(messageId) {
+    if (!socket || !currentChat) return;
+    if (!confirm('Удалить сообщение?')) return;
+    socket.emit('delete_message', {
+        message_id: messageId,
+        user_id: currentUser.id,
+        chat_id: currentChat.id
+    });
+}
+
+function markMessageDeleted(messageId) {
+    const messageDiv = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (!messageDiv) return;
+
+    const bubble = messageDiv.querySelector('.message-bubble');
+    if (bubble) {
+        bubble.classList.add('system');
+        bubble.innerHTML = 'Сообщение удалено';
+    }
+
+    const reactions = messageDiv.querySelector('.message-reactions');
+    if (reactions) reactions.remove();
 }
 
 function toggleReaction(messageId, emoji) {
@@ -504,6 +1275,13 @@ function sendMessage() {
     const content = input.value.trim();
     
     if (!content || !currentChat || !socket) return;
+
+    const maxLen = getMaxMessageLength();
+    if (content.length > maxLen) {
+        alert(`Слишком длинное сообщение (макс. ${maxLen} символов)`);
+        updateMessageCounter();
+        return;
+    }
     
     socket.emit('send_message', {
         chat_id: currentChat.id,
@@ -547,6 +1325,8 @@ function handleTyping() {
     const input = document.getElementById('message-input');
     input.style.height = 'auto';
     input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+
+    updateMessageCounter();
     
     if (!socket || !currentChat) return;
     
@@ -707,6 +1487,18 @@ function openProfile() {
     } else {
         premiumBadge.textContent = 'Обычный';
         premiumBadge.style.color = '#666';
+    }
+
+    const select = document.getElementById('premium-wallpaper');
+    const hint = document.getElementById('premium-wallpaper-hint');
+    if (select) {
+        const wallpaper = localStorage.getItem('beegram_wallpaper') || 'default';
+        select.value = wallpaper;
+        select.disabled = !currentUser.is_premium;
+    }
+    if (hint) {
+        hint.style.color = currentUser.is_premium ? '#666' : '#ff6b6b';
+        hint.textContent = currentUser.is_premium ? 'Выберите обои — применятся сразу' : 'Доступно только для Premium';
     }
 }
 
@@ -922,8 +1714,19 @@ function openStickers() {
         pack.stickers.forEach(sticker => {
             const stickerItem = document.createElement('div');
             stickerItem.className = 'sticker-item';
-            stickerItem.textContent = sticker.emoji;
-            stickerItem.addEventListener('click', () => sendSticker(sticker.emoji));
+            if (sticker.is_image) {
+                const img = document.createElement('img');
+                img.src = `/uploads/${sticker.url}`;
+                img.alt = 'sticker';
+                img.style.width = '64px';
+                img.style.height = '64px';
+                img.style.objectFit = 'contain';
+                stickerItem.appendChild(img);
+                stickerItem.addEventListener('click', () => sendImageSticker(sticker.url));
+            } else {
+                stickerItem.textContent = sticker.emoji;
+                stickerItem.addEventListener('click', () => sendSticker(sticker.emoji));
+            }
             grid.appendChild(stickerItem);
         });
         
@@ -946,7 +1749,14 @@ function openChatInfo() {
     
     const content = document.getElementById('chat-info-content');
     
-    if (currentChat.is_group) {
+    if (currentChat.is_channel) {
+        content.innerHTML = `
+            <h3>Канал 📢</h3>
+            <p><strong>Название:</strong> ${escapeHtml(currentChat.name || '')}</p>
+            <p><strong>Описание:</strong> ${escapeHtml(currentChat.description || '—')}</p>
+            <p><strong>Подписчиков:</strong> ${currentChat.subscribers_count || 0}</p>
+        `;
+    } else if (currentChat.is_group) {
         content.innerHTML = `
             <h3>Групповой чат</h3>
             <p><strong>Название:</strong> ${currentChat.name}</p>
