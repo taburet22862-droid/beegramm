@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🛡️ Модер-панель - BeeGramm</title>
+    <link rel="stylesheet" href="/static/css/moderator.css">
+</head>
+<body>
+    <div class="mod-container">
+        <aside class="mod-sidebar">
+            <div class="mod-logo">
+                <h1>🛡️ BeeGramm</h1>
+                <p>Модер-панель</p>
+            </div>
+
+            <nav class="mod-nav">
+                <a href="#support" class="nav-item active" onclick="showSection('support')">🛟 Поддержка</a>
+                <a href="#users" class="nav-item" onclick="showSection('users')">🚫 Спам-блок</a>
+                <a href="#reports" class="nav-item" onclick="showSection('reports')">🚩 Жалобы</a>
+            </nav>
+
+            <div class="mod-user">
+                <div class="mod-user-info">
+                    <img id="mod-avatar" src="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👤</text></svg>" alt="Avatar">
+                    <div>
+                        <div id="mod-name">Модератор</div>
+                        <div class="mod-role">🛡️ Модератор</div>
+                    </div>
+                </div>
+                <button class="btn-back" onclick="backToApp()">← Вернуться в чат</button>
+            </div>
+        </aside>
+
+        <main class="mod-main">
+            <section id="section-support" class="mod-section active">
+                <div class="section-header">
+                    <h2>🛟 Поддержка</h2>
+                    <p>Ответы пользователям от имени @support</p>
+                </div>
+
+                <div class="support-grid">
+                    <div class="support-list">
+                        <div class="panel-title">Диалоги</div>
+                        <div id="support-chats" class="list"></div>
+                    </div>
+
+                    <div class="support-chat">
+                        <div class="panel-title">Ответ</div>
+                        <div id="support-selected" class="selected-hint">Выберите диалог слева</div>
+                        <textarea id="support-reply" placeholder="Введите ответ..." rows="5"></textarea>
+                        <button class="btn-primary" onclick="sendSupportReply()">Отправить</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="section-users" class="mod-section">
+                <div class="section-header">
+                    <h2>🚫 Спам-блок</h2>
+                    <p>Поиск пользователя и управление спам-блоком</p>
+                </div>
+
+                <div class="user-tools">
+                    <input id="user-search" type="text" placeholder="Введите username..." oninput="searchUsers()" class="search-input">
+                </div>
+
+                <div id="user-results" class="user-results"></div>
+            </section>
+
+            <section id="section-reports" class="mod-section">
+                <div class="section-header">
+                    <h2>🚩 Жалобы</h2>
+                    <p>Очередь жалоб на сообщения</p>
+                </div>
+
+                <div class="user-tools" style="gap: 10px;">
+                    <button class="btn-primary" onclick="loadReports('open')">Открытые</button>
+                    <button class="btn-primary" onclick="loadReports('resolved')">Решённые</button>
+                </div>
+
+                <div id="reports-list" class="user-results"></div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/moderator.js"></script>
+</body>
+</html>
